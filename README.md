@@ -4,27 +4,31 @@ This repository contains Google Earth Engine scripts used to analyze vegetation 
 
 ## Data
 
-Sentinel-2 imagery (Copernicus Programme)
-
-Google Earth Engine platform
+- Sentinel-2 Level-2A Surface Reflectance  
+- Copernicus Programme  
+- Accessed via Google Earth Engine  
 
 ## Methods
 
-- NDVI computation
-- NDMI computation
-- Vegetation stress index
-- Temporal trend analysis
-- Pearson correlation
-- Annual aggregation
+- NDVI computation  
+- NDMI computation  
+- Vegetation stress index (NDVI − NDMI)  
+- Temporal trend analysis  
+- Pearson correlation  
+- Annual aggregation  
 
-## Period
+## Study Period
 
 2017–2025
 
 ## Platform
 
-Google Earth Engine
+Google Earth Engine (JavaScript API)
+
+## Repository
+
+https://github.com/fninajaz-lang/LaYarada-Sentinel2-Vegetation-Stress
 
 ## Author
 
-[Tu nombre]
+fninajaz-lang
