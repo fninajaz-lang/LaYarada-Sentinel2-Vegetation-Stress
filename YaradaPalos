@@ -1,0 +1,459 @@
+
+// POLIGONO DISTRITO LA YARADA LOS PALOS
+
+
+var yarada = ee.Geometry.Polygon([
+[
+[-70.34029844478378,-18.146882440658498],
+[-70.34261587337265,-18.14329369460529],
+[-70.34467580989609,-18.139827222231418],
+[-70.34313085750351,-18.138766875781418],
+[-70.33549486431113,-18.130297475320116],
+[-70.35869258991299,-18.111064583562158],
+[-70.37448081901653,-18.118278733806168],
+[-70.38056538393197,-18.10862373340182],
+[-70.38428177463926,-18.1050420480075],
+[-70.42234768497862,-18.089092222698753],
+[-70.51310536139482,-18.09074179713771],
+[-70.54200378031486,-18.11783305256724],
+[-70.56924285476869,-18.133255550695054],
+[-70.56941451614564,-18.142390920156505],
+[-70.57345865105476,-18.15526586827313],
+[-70.57920738634807,-18.175847822050542],
+[-70.58401390490276,-18.18432861298271],
+[-70.5841616633508,-18.195171589305236],
+[-70.58534822462015,-18.200277930197846],
+[-70.57370093414481,-18.206385414357058],
+[-70.57690333065135,-18.21624488702966],
+[-70.57437132534129,-18.217997754955498],
+[-70.55822615306417,-18.227410556443182],
+[-70.53919567051965,-18.23886242900123],
+[-70.53460534194022,-18.240638031525684],
+[-70.5154574495247,-18.25310687214401],
+[-70.49966460284502,-18.262725006756817],
+[-70.4627574068001,-18.287012499885183],
+[-70.4407847505501,-18.302984969951105],
+[-70.43340331134111,-18.307222316906973],
+[-70.42024114267255,-18.3166377078892],
+[-70.41783734511027,-18.318234075163474],
+[-70.41654988478312,-18.319293328321532],
+[-70.41311665724406,-18.321330335401804],
+[-70.41062756727824,-18.323530276113566],
+[-70.4085676307548,-18.32564871110092],
+[-70.40659352491984,-18.32678939611808],
+[-70.40324612806926,-18.329396647910013],
+[-70.39861127089152,-18.333063029242314],
+[-70.39062201141904,-18.339624140970525],
+[-70.38921207182895,-18.340721745431974],
+[-70.38642340548031,-18.343078368695075],
+[-70.38421326525204,-18.345038718781748],
+[-70.37983608422692,-18.348812707581782],
+[-70.37710023103173,-18.35130761193272],
+[-70.37499737916406,-18.348252622060695],
+[-70.37215340407607,-18.344473043825328],
+[-70.36889183791396,-18.34048102166096],
+[-70.36502945693252,-18.336244489129847],
+[-70.35936463149307,-18.331356053355254],
+[-70.35361397536514,-18.326874865829474],
+[-70.34822692996978,-18.323194733226288],
+[-70.34367790348053,-18.320424427576725],
+[-70.33672561771392,-18.31724666942228],
+[-70.3298591626358,-18.31455775156404],
+[-70.32213440067291,-18.312113244536746],
+[-70.31426488371099,-18.310029764131766],
+[-70.32926346085564,-18.185884018472862],
+[-70.34969116471306,-18.188819554634133],
+[-70.34029844478378,-18.146882440658498]
+]
+]);
+
+
+Map.centerObject(yarada, 10);
+
+Map.addLayer(
+yarada,
+{
+color: 'red'
+},
+'Distrito La Yarada Los Palos'
+);
+
+
+
+var area = yarada.area().divide(1000000);
+
+print('Area km2:', area);
+
+
+
+print('Coordenadas:', yarada.coordinates());
+
+
+
+
+// ANALISIS NDVI + NDMI + CORRELACION + ESTRES HIDRICO
+
+
+var roi = yarada;
+Map.centerObject(roi, 11);
+Map.addLayer(roi, {color: 'red'}, 'ROI - La Yarada Los Palos');
+Map.setOptions('SATELLITE');
+
+// MASCARA DE NUBES
+
+function maskS2sr(img) {
+  var scl = img.select('SCL');
+  var mask = scl.neq(3)
+    .and(scl.neq(8))
+    .and(scl.neq(9))
+    .and(scl.neq(10))
+    .and(scl.neq(11));
+  return img.updateMask(mask);
+}
+
+
+// FUNCION AUXILIAR: ESTADISTICAS NDVI/NDMI
+
+function periodStats(col) {
+  var comp = ee.Image(col.median());
+
+  var ndviImg = comp.normalizedDifference(['B8', 'B4']).rename('NDVI');
+  var ndmiImg = comp.normalizedDifference(['B8', 'B11']).rename('NDMI');
+
+  return ee.Dictionary(
+    ndviImg.addBands(ndmiImg).reduceRegion({
+      reducer: ee.Reducer.mean(),
+      geometry: roi,
+      scale: 60,          // más liviano para la serie temporal
+      bestEffort: true,
+      tileScale: 4,
+      maxPixels: 1e13
+    })
+  );
+}
+
+
+
+var s2raw = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+  .filterBounds(roi)
+  .filterDate('2017-01-01', '2025-12-31')
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))
+  .select(['B2', 'B3', 'B4', 'B8', 'B11', 'SCL']);
+
+var s2 = s2raw.map(maskS2sr);
+
+print('Numero de imagenes:', s2.size());
+print('Bandas de la primera imagen:', ee.Image(s2.first()).bandNames());
+
+
+var rgb_raw = s2raw.select(['B4', 'B3', 'B2']).median().clip(roi);
+var rgb = s2.select(['B4', 'B3', 'B2']).median().clip(roi);
+var swir = s2.select(['B11', 'B8', 'B4']).median().clip(roi);
+
+var ndvi = s2.select(['B8', 'B4'])
+  .median()
+  .normalizedDifference(['B8', 'B4'])
+  .rename('NDVI')
+  .clip(roi);
+
+var ndmi = s2.select(['B8', 'B11'])
+  .median()
+  .normalizedDifference(['B8', 'B11'])
+  .rename('NDMI')
+  .clip(roi);
+
+var stressIndex = ndvi.subtract(ndmi).rename('StressIndex').clip(roi);
+
+// Visualización en mapa
+Map.addLayer(rgb_raw, {bands: ['B4', 'B3', 'B2'], min: 0, max: 3000}, 'RGB sin filtro');
+Map.addLayer(rgb, {bands: ['B4', 'B3', 'B2'], min: 0, max: 3000}, 'RGB filtrado');
+Map.addLayer(swir, {bands: ['B11', 'B8', 'B4'], min: 0, max: 3500}, 'Falso color SWIR');
+Map.addLayer(ndvi, {min: -0.2, max: 0.8, palette: ['brown', 'yellow', 'green']}, 'NDVI');
+Map.addLayer(ndmi, {min: -0.5, max: 0.5, palette: ['red', 'yellow', 'green']}, 'NDMI');
+Map.addLayer(stressIndex, {min: -0.2, max: 0.4, palette: ['blue', 'white', 'red']}, 'NDVI - NDMI');
+
+
+// TABLA 
+var start = ee.Date('2017-01-01');
+var periods = ee.List.sequence(0, 26);  // 27 bloques de 4 meses
+
+var tableList = ee.List(
+  periods.iterate(function(p, acc) {
+    p = ee.Number(p);
+    acc = ee.List(acc);
+
+    var startDate = start.advance(p.multiply(4), 'month');
+    var endDate = startDate.advance(4, 'month');
+
+    var block = s2.filterDate(startDate, endDate);
+
+    var item = ee.Algorithms.If(
+      block.size().gt(0),
+      (function() {
+        var stats = periodStats(block);
+        return acc.add(ee.Feature(null, {
+          time: startDate.millis(),
+          date: startDate.format('YYYY-MM'),
+          year: startDate.get('year'),
+          month: startDate.get('month'),
+          NDVI: stats.get('NDVI'),
+          NDMI: stats.get('NDMI')
+        }));
+      })(),
+      acc
+    );
+
+    return item;
+  }, ee.List([]))
+);
+
+var table = ee.FeatureCollection(tableList)
+  .filter(ee.Filter.notNull(['NDVI', 'NDMI']))
+  .sort('time');
+
+print('Tabla temporal:', table);
+
+// ===============================
+// GRAFICAS
+// ===============================
+var chartCombined = ui.Chart.feature.byFeature(table, 'time', ['NDVI', 'NDMI'])
+  .setChartType('LineChart')
+  .setOptions({
+    title: 'NDVI y NDMI temporales - La Yarada Los Palos',
+    hAxis: {title: 'Fecha'},
+    vAxis: {title: 'Indice'},
+    lineWidth: 2,
+    pointSize: 3,
+    series: {
+      0: {color: 'green'},
+      1: {color: 'blue'}
+    }
+  });
+
+print(chartCombined);
+
+var scatter = ui.Chart.feature.byFeature(table, 'NDVI', ['NDMI'])
+  .setChartType('ScatterChart')
+  .setOptions({
+    title: 'Relacion NDVI vs NDMI - La Yarada Los Palos',
+    hAxis: {title: 'NDVI'},
+    vAxis: {title: 'NDMI'},
+    pointSize: 4,
+    trendlines: {0: {showR2: true, visibleInLegend: true}}
+  });
+
+print(scatter);
+
+var correlacion = table.reduceColumns(
+  ee.Reducer.pearsonsCorrelation(),
+  ['NDVI', 'NDMI']
+);
+
+print('Correlacion NDVI vs NDMI:', correlacion);
+
+
+var years = ee.List.sequence(2017, 2025);
+
+var annualTable = ee.FeatureCollection(
+  years.map(function(y) {
+    y = ee.Number(y);
+    var fy = table.filter(ee.Filter.eq('year', y));
+
+    return ee.Feature(null, {
+      year: y,
+      NDVI: fy.aggregate_mean('NDVI'),
+      NDMI: fy.aggregate_mean('NDMI'),
+      n_blocks: fy.size()
+    });
+  })
+).sort('year');
+
+print('Tabla anual:', annualTable);
+
+var chartAnnual = ui.Chart.feature.byFeature(annualTable, 'year', ['NDVI', 'NDMI'])
+  .setChartType('LineChart')
+  .setOptions({
+    title: 'Promedio anual NDVI y NDMI - La Yarada Los Palos',
+    hAxis: {title: 'Año'},
+    vAxis: {title: 'Indice'},
+    lineWidth: 2,
+    pointSize: 5
+  });
+
+print(chartAnnual);
+
+
+// ESTRES HIDRICO
+
+var stress = ndmi.expression(
+  "(ndmi < 0.10) ? 1" +
+  ": (ndmi < 0.25) ? 2" +
+  ": 3",
+  {ndmi: ndmi}
+).rename('stress').clip(roi);
+
+Map.addLayer(
+  stress,
+  {min: 1, max: 3, palette: ['red', 'yellow', 'green']},
+  'Stress map'
+);
+
+
+var areaImage = ee.Image.pixelArea().addBands(stress);
+
+var areas = areaImage.reduceRegion({
+  reducer: ee.Reducer.sum().group({
+    groupField: 1,
+    groupName: 'class'
+  }),
+  geometry: roi,
+  scale: 20,
+  tileScale: 4,
+  maxPixels: 1e13,
+  bestEffort: true
+});
+
+print('Areas por clase (m2):', areas);
+
+var areasList = ee.List(areas.get('groups'));
+
+var areaTable = ee.FeatureCollection(
+  areasList.map(function(item) {
+    item = ee.Dictionary(item);
+    return ee.Feature(null, {
+      class: item.get('class'),
+      area_m2: item.get('sum'),
+      area_km2: ee.Number(item.get('sum')).divide(1e6)
+    });
+  })
+).sort('class');
+
+print('Tabla de areas por estres:', areaTable);
+
+
+Export.table.toDrive({
+  collection: table,
+  description: 'NDVI_NDMI_temporal_LaYarada',
+  fileFormat: 'CSV'
+});
+
+Export.table.toDrive({
+  collection: annualTable,
+  description: 'NDVI_NDMI_anual_LaYarada',
+  fileFormat: 'CSV'
+});
+
+Export.table.toDrive({
+  collection: areaTable,
+  description: 'Area_estres_LaYarada',
+  fileFormat: 'CSV'
+});
+
+Export.table.toDrive({
+  collection: ee.FeatureCollection([
+    ee.Feature(null, {pearson_r: correlacion.get('correlation')})
+  ]),
+  description: 'Correlacion_NDVI_NDMI_LaYarada',
+  fileFormat: 'CSV'
+});
+
+
+var exportRegion = roi.bounds().buffer(3000);
+
+var s2Context = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+  .filterBounds(exportRegion)
+  .filterDate('2023-01-01', '2025-12-31')
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))
+  .select(['B2', 'B3', 'B4', 'B8', 'B11', 'SCL'])
+  .map(maskS2sr);
+
+var rgbContext = s2Context.select(['B4', 'B3', 'B2']).median();
+var swirContext = s2Context.select(['B11', 'B8', 'B4']).median();
+
+var outline = ee.Image().byte().paint(roi, 1, 3);
+var outlineVis = outline.visualize({palette: ['FF0000']});
+
+var rgbFig = ee.ImageCollection([
+  rgbContext.visualize({bands: ['B4', 'B3', 'B2'], min: 0, max: 3000}),
+  outlineVis
+]).mosaic();
+
+var ndviFig = ee.ImageCollection([
+  rgbContext.visualize({bands: ['B4', 'B3', 'B2'], min: 0, max: 3000}),
+  ndvi.visualize({min: -0.2, max: 0.8, palette: ['8c510a', 'f6e8c3', '1a9850']}),
+  outlineVis
+]).mosaic();
+
+var ndmiFig = ee.ImageCollection([
+  rgbContext.visualize({bands: ['B4', 'B3', 'B2'], min: 0, max: 3000}),
+  ndmi.visualize({min: -0.5, max: 0.5, palette: ['d73027', 'fee08b', '1a9850']}),
+  outlineVis
+]).mosaic();
+
+var stressFig = ee.ImageCollection([
+  rgbContext.visualize({bands: ['B4', 'B3', 'B2'], min: 0, max: 3000}),
+  stress.visualize({min: 1, max: 3, palette: ['d73027', 'fee08b', '1a9850']}),
+  outlineVis
+]).mosaic();
+
+var swirFig = ee.ImageCollection([
+  swirContext.visualize({bands: ['B11', 'B8', 'B4'], min: 0, max: 4000}),
+  outlineVis
+]).mosaic();
+
+Map.addLayer(rgbFig, {}, 'RGB figura');
+Map.addLayer(ndviFig, {}, 'NDVI figura');
+Map.addLayer(ndmiFig, {}, 'NDMI figura');
+Map.addLayer(stressFig, {}, 'Stress figura');
+Map.addLayer(swirFig, {}, 'SWIR figura');
+
+
+Export.image.toDrive({
+  image: rgbFig,
+  description: 'RGB_Figura_LaYarada',
+  folder: 'GEE_LaYarada',
+  region: exportRegion,
+  scale: 10,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: ndviFig,
+  description: 'NDVI_Figura_LaYarada',
+  folder: 'GEE_LaYarada',
+  region: exportRegion,
+  scale: 10,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: ndmiFig,
+  description: 'NDMI_Figura_LaYarada',
+  folder: 'GEE_LaYarada',
+  region: exportRegion,
+  scale: 20,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: stressFig,
+  description: 'Stress_Figura_LaYarada',
+  folder: 'GEE_LaYarada',
+  region: exportRegion,
+  scale: 20,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
+
+Export.image.toDrive({
+  image: swirFig,
+  description: 'SWIR_Figura_LaYarada',
+  folder: 'GEE_LaYarada',
+  region: exportRegion,
+  scale: 20,
+  maxPixels: 1e13,
+  fileFormat: 'GeoTIFF'
+});
